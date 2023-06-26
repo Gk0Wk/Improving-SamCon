@@ -1,16 +1,17 @@
 import numpy as np
 
+
 class HumanoidStablePD():
 
     def __init__(self, pybullet_client, char_info, model_file, scale, self_collision=True, kinematic_only=False):
         self._pb_client = pybullet_client
-        
+
         """ load urdf """
         char_create_flags = self._pb_client.URDF_MAINTAIN_LINK_ORDER
         if self_collision:
-            char_create_flags = char_create_flags|\
-                                self._pb_client.URDF_USE_SELF_COLLISION|\
-                                self._pb_client.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+            char_create_flags = char_create_flags |\
+                self._pb_client.URDF_USE_SELF_COLLISION |\
+                self._pb_client.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
         self._body_id = self._pb_client.loadURDF(
             fileName=model_file,
             basePosition=[0, 0, 0],
@@ -22,9 +23,9 @@ class HumanoidStablePD():
         """ pre-compute information about the humanoid """
         # 1 base + 19 links + 19 joints
         self._num_joint = self._pb_client.getNumJoints(self._body_id)
-        self._link_indices = range(-1, self._num_joint) # include base link (it has mass and collision entity)
-        self._joint_indices = range(self._num_joint) # all joints
-        self._joint_indices_movable = [] # movable (controllable) joints
+        self._link_indices = range(-1, self._num_joint)  # include base link (it has mass and collision entity)
+        self._joint_indices = range(self._num_joint)  # all joints
+        self._joint_indices_movable = []  # movable (controllable) joints
         self._joint_type = []
         for j in self._joint_indices:
             joint_info = self._pb_client.getJointInfo(self._body_id, j)
@@ -33,9 +34,9 @@ class HumanoidStablePD():
             joint_type = self.get_joint_type(j)
             if joint_type == self._pb_client.JOINT_SPHERICAL:
                 self._joint_indices_movable.append(j)
-            elif joint_type == self._pb_client.JOINT_REVOLUTE: 
+            elif joint_type == self._pb_client.JOINT_REVOLUTE:
                 self._joint_indices_movable.append(j)
-            elif joint_type == self._pb_client.JOINT_FIXED: 
+            elif joint_type == self._pb_client.JOINT_FIXED:
                 continue
             else:
                 raise NotImplementedError()
@@ -57,29 +58,29 @@ class HumanoidStablePD():
             elif joint_type == self._pb_client.JOINT_SPHERICAL:
                 max_force = np.ones(3) * char_info['max_forces'][i]
             self._max_forces.append(max_force)
-                
+
     def setup_dynamics(self):
         # Settings for the simulation self._body_id
         self._pb_client.changeDynamics(self._body_id, -1, linearDamping=0, angularDamping=0)
-        
+
         # set dynamics parameters for all links (1 base + 19 others)
         for k in self._link_indices:
             self._pb_client.changeDynamics(
-                self._body_id, 
-                k, 
-                lateralFriction=0.8, 
-                spinningFriction=0.3, 
-                jointDamping=0.0, 
+                self._body_id,
+                k,
+                lateralFriction=0.8,
+                spinningFriction=0.3,
+                jointDamping=0.0,
                 restitution=0.0,
                 # linearDamping=0.0,
                 # angularDamping=0.0
             )
-        
+
         # set motor
         for j in self._joint_indices_movable:
             self._pb_client.setJointMotorControl2(
-                self._body_id, 
-                j, 
+                self._body_id,
+                j,
                 self._pb_client.POSITION_CONTROL,
                 targetPosition=0,
                 positionGain=0,
@@ -114,8 +115,8 @@ class HumanoidStablePD():
                 self._body_id,
                 k,
                 activationState=self._pb_client.ACTIVATION_STATE_SLEEP +
-                                self._pb_client.ACTIVATION_STATE_ENABLE_SLEEPING +
-                                self._pb_client.ACTIVATION_STATE_DISABLE_WAKEUP
+                self._pb_client.ACTIVATION_STATE_ENABLE_SLEEPING +
+                self._pb_client.ACTIVATION_STATE_DISABLE_WAKEUP
             )
 
     def get_joint_type(self, idx):
@@ -135,10 +136,10 @@ class HumanoidStablePD():
         )
 
     def set_state(self, state):
-        ''' 
+        '''
         Set all state information of the given body. States should include
         pQvw of the base link and p and v for the all joints
-        '''      
+        '''
         state = np.array(state, dtype=np.float64)
         p = state[0:3]
         Q = state[3:7]
@@ -153,10 +154,10 @@ class HumanoidStablePD():
         self.set_joint_pv(self._joint_indices_movable, ps, vs)
 
     def get_state(self):
-        ''' 
-        Return all state information of the given body. This includes 
+        '''
+        Return all state information of the given body. This includes
         pQvw of the base link and p and v for the all joints
-        '''        
+        '''
         p, Q, v, w = self.get_base_pQvw()
         ps, vs = self.get_joint_pv(self._joint_indices_movable)
         state = np.concatenate(
@@ -185,19 +186,19 @@ class HumanoidStablePD():
         com_vel /= total_mass
 
         return com_pos, com_vel
-    
+
     def set_base_pQvw(self, p, Q, v=None, w=None):
-        ''' 
+        '''
         Set positions, orientations, linear and angular velocities of the base link.
-        ''' 
+        '''
         self._pb_client.resetBasePositionAndOrientation(self._body_id, p, Q)
         if v is not None and w is not None:
             self._pb_client.resetBaseVelocity(self._body_id, v, w)
 
     def get_base_pQvw(self):
-        ''' 
+        '''
         Returns position, orientation, linear and angular velocities of the base link.
-        ''' 
+        '''
         p, Q = self._pb_client.getBasePositionAndOrientation(self._body_id)
         p, Q = np.array(p), np.array(Q)
         v, w = self._pb_client.getBaseVelocity(self._body_id)
@@ -205,16 +206,16 @@ class HumanoidStablePD():
         return p, Q, v, w
 
     def get_link_pQvw(self, indices=None):
-        ''' 
+        '''
         Returns positions, orientations, linear and angular velocities given link indices.
         Please use get_base_pQvw for the base link.
-        ''' 
+        '''
         if indices is None:
             indices = range(self._num_joint)
-        
+
         num_indices = len(indices)
         assert num_indices > 0
-        
+
         ls = self._pb_client.getLinkStates(self._body_id, indices, computeLinkVelocity=True)
 
         ps = [np.array(ls[j][0]) for j in range(num_indices)]
@@ -228,17 +229,17 @@ class HumanoidStablePD():
             return ps, Qs, vs, ws
 
     def set_joint_pv(self, indices, ps, vs):
-        ''' 
+        '''
         Set positions and velocities given joint indices.
         Please note that the values are locally repsented w.r.t. its parent joint
-        '''        
+        '''
         self._pb_client.resetJointStatesMultiDof(self._body_id, indices, ps, vs)
 
     def get_joint_pv(self, indices=None):
-        ''' 
+        '''
         Return positions and velocities given joint indices.
         Please note that the values are locally repsented w.r.t. its parent joint
-        '''        
+        '''
         if indices is None:
             indices = range(self._num_joint)
 
@@ -259,4 +260,3 @@ class HumanoidStablePD():
             return ps[0], vs[0]
         else:
             return ps, vs
-    

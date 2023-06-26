@@ -1,18 +1,22 @@
 import pybullet as p
 
+
 def getEulerFromQuaternion(quat):
     return p.getEulerFromQuaternion(quat)
+
 
 def getQuaternionFromEuler(euler):
     return p.getQuaternionFromEuler(euler)
 
-def computeLinVel(posStart, posEnd, deltaTime): 
+
+def computeLinVel(posStart, posEnd, deltaTime):
     vel = [
-        (posEnd[0] - posStart[0]) / deltaTime, 
+        (posEnd[0] - posStart[0]) / deltaTime,
         (posEnd[1] - posStart[1]) / deltaTime,
         (posEnd[2] - posStart[2]) / deltaTime
     ]
     return vel
+
 
 def computeAngVel(ornStart, ornEnd, deltaTime):
     """ compute angular velocity in world coordinate (for base) """
@@ -23,11 +27,12 @@ def computeAngVel(ornStart, ornEnd, deltaTime):
     )
     axis, angle = p.getAxisAngleFromQuaternion(dorn)
     angVel = [
-        (axis[0] * angle) / deltaTime, 
+        (axis[0] * angle) / deltaTime,
         (axis[1] * angle) / deltaTime,
         (axis[2] * angle) / deltaTime
     ]
     return angVel
+
 
 def computeAngVelRel(ornStart, ornEnd, deltaTime):
     """ compute angular velocity in local coordinate (for joints) """
@@ -38,11 +43,12 @@ def computeAngVelRel(ornStart, ornEnd, deltaTime):
     )
     axis, angle = p.getAxisAngleFromQuaternion(dorn)
     angVel = [
-        (axis[0] * angle) / deltaTime, 
+        (axis[0] * angle) / deltaTime,
         (axis[1] * angle) / deltaTime,
         (axis[2] * angle) / deltaTime
     ]
     return angVel
+
 
 def isKeyTriggered(keys, key):
     o = ord(key)

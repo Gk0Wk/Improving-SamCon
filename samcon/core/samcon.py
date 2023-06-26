@@ -1,7 +1,9 @@
 import os
 import os.path as osp
-import time
 import multiprocessing
+from tqdm import tqdm
+from queue import Queue
+from multiprocessing.connection import Connection
 import numpy as np
 import datetime
 from scipy.spatial.transform import Rotation as sRot
@@ -9,13 +11,13 @@ from scipy.spatial.transform import Rotation as sRot
 from envs.humanoid_tracking_env import HumanoidTrackingEnv
 from samcon.core.trajectory import Trajectory
 from samcon.core.unique_id import UniqueId
-from utils.tools import get_eta_str
 from utils.logger import create_logger
+from samcon.cmaes.cmaes import CMAES
+from samcon.utils.config import Config
 
 
 def sample_worker(pid, pipe, cfg, viz, num_substep):
     """ run physics simulator in the subprocess """
-
     # create env
     env = HumanoidTrackingEnv(cfg, viz)
 
@@ -55,13 +57,18 @@ def sample_worker(pid, pipe, cfg, viz, num_substep):
 
 class SamCon():
 
-    def __init__(self, cfg, data_loader, num_processes, nIter, nSample, nSave):
+    def __init__(self, cfg: Config, data_loader: any, num_processes: int, nIter: int, nSample: int, nSave: int,
+                 window: int = 50, cost_fail_threshold: float = 100.0, cost_good_threshold: float = 1e-5):
         np.random.seed(cfg.seed)
         self._cfg = cfg
         self._data_loader = data_loader
 
+        self.window_size = window
+        self.cost_good_threshold = cost_good_threshold
+        self.cost_fail_threshold = cost_fail_threshold
+
         """ sample config """
-        self._sample_timestep = 1.0 / cfg.fps_act
+        self._sample_timestep: float = 1.0 / cfg.fps_act
         self._nIter = nIter
         self._nSample = nSample
         self._nSave = nSave
@@ -71,9 +78,9 @@ class SamCon():
 
         """ multiprocessing """
         self._num_processes = num_processes
-        self._processes = []
-        self._parent_pipes = []
-        self._child_pipes = []
+        self._processes: list[multiprocessing.Process] = []
+        self._parent_pipes: list[Connection] = []
+        self._child_pipes: list[Connection] = []
         for _ in range(num_processes):
             parent, child = multiprocessing.Pipe()
             self._parent_pipes.append(parent)
@@ -87,7 +94,7 @@ class SamCon():
 
         # pre-compute job chunks for subprocesses
         self._jobs = np.array_split(np.arange(0, self._nSave), self._num_processes)
-        self._jobs_action = []
+        self._jobs_action: list[np.ndarray] = []
         for x in self._jobs:
             start_id = x[0] * self._num_substep
             end_id = (x[-1] + 1) * self._num_substep
@@ -102,26 +109,26 @@ class SamCon():
         """ logger """
         self._logger = create_logger(os.path.join(cfg.log_dir, "log_sample.txt"))
 
-    def get_batch_action(self, state):
-
-        # noise
-        if self._cfg.noise_type == 'gaussian':
-            vars = self._cfg.values
-            num_eulers = len(vars)
-            noise = np.random.multivariate_normal(  # (2000, 51)
-                mean=np.zeros(num_eulers),
-                cov=np.diag(vars),
-                size=(self._nSample)
-            )
-        elif self._cfg.noise_type == 'uniform':
-            limits = self._cfg.values
-            num_eulers = len(limits)
-            noise = np.random.random((self._nSample, num_eulers))  # sample from [0, 1) uniform distribution
-            for i in range(num_eulers):  # transform to [-limit, limit)
-                noise[:, i] *= 2 * limits[i]
-                noise[:, i] += -1 * limits[i]
-        else:
-            raise NotImplementedError
+    def get_batch_action(self, state, cmaes: CMAES):
+        # # noise
+        # if self._cfg.noise_type == 'gaussian':
+        #     vars = self._cfg.values
+        #     num_eulers = len(vars)
+        #     noise = np.random.multivariate_normal(  # (2000, 51)
+        #         mean=np.zeros(num_eulers),
+        #         cov=np.diag(vars),
+        #         size=(self._nSample)
+        #     )
+        # elif self._cfg.noise_type == 'uniform':
+        #     limits = self._cfg.values
+        #     num_eulers = len(limits)
+        #     noise = np.random.random((self._nSample, num_eulers))  # sample from [0, 1) uniform distribution
+        #     for i in range(num_eulers):  # transform to [-limit, limit)
+        #         noise[:, i] *= 2 * limits[i]
+        #         noise[:, i] += -1 * limits[i]
+        # else:
+        #     raise NotImplementedError
+        noise = cmaes.sample()
 
         # quaternion 2 euler
         state_quat = state[7:75]  # (68, )
@@ -141,12 +148,14 @@ class SamCon():
         batch_action_quat = batch_action_quat.as_quat().reshape(self._nSample, -1)  # (2000, 68)
 
         # shuffle
-        np.random.shuffle(batch_action_quat)
+        index = np.arange(len(state_euler))
+        np.random.shuffle(index)
+        batch_action_quat = batch_action_quat[index]
+        noise = noise[index]
 
-        return batch_action_quat
+        return batch_action_quat, noise
 
     def sample(self):
-
         # setup sampling start point
         startp_iter = 0
         startp_uid = next(self._unique_id.get(1))
@@ -158,38 +167,96 @@ class SamCon():
             self._traj.push(startp_iter, [-1, startp_uid, startp_state, None, None, 0.0, None])
         self._traj.select(startp_iter)
 
-        # begin sampling
-        for t in range(1, self._nIter + 1):
-            t0 = time.time()
+        # 适应器初始化
+        cmaes_list = [None for _ in range(self._nIter + 1)]
 
-            target_state = self._data_loader.getSpecTimeState(t * self._sample_timestep)
-            batch_action = self.get_batch_action(target_state)
-            curr_iter = t
-            prev_uids = self._traj.get_curr_uid_elite(t-1)
-            curr_uids = [self._unique_id.get(len(j) * self._num_substep) for j in self._jobs]
-            os.makedirs(osp.join(self._cfg.state_dir, f'{curr_iter}'), exist_ok=True)
+        def get_cmaes(iter: int) -> CMAES:
+            if (cmaes_list[iter] is None):
+                cmaes_list[iter] = CMAES(
+                    len(self._cfg.values),
+                    init_cov=np.diag(self._cfg.values),
+                    sigma=0.1, sample_size=self._nSample, elite_size=self._nSave)
+            return cmaes_list[iter]
 
-            # send to subprocess
-            for i, parentPipe in enumerate(self._parent_pipes):
-                data = [curr_iter, prev_uids[self._jobs[i]], curr_uids[i],
-                        target_state, batch_action[self._jobs_action[i]]]
-                parentPipe.send(["sim", data])
-            results = []
+        trial = 0  # 从 1 计数
+        iter_window = [0, 1]
+        trajectory_counter = 0
+        iter_run_count = [0 for _ in range(self._nIter + 1)]
+        iter_last_five_cost = [[] for _ in range(self._nIter + 1)]
+        while trajectory_counter < self._nIter:
+            trial += 1
+            # 建立窗口
+            iter_window[1] = min(len(self._nIter), iter_window[0] + self.window_size)
+            window_results = Queue(self.window_size)
+            # 逐帧优化
+            tq = tqdm(total=self._nIter, desc='Sampling', unit='iter')
+            tq.set_postfix_str(f'Trial: {trial}')
+            tq.update(iter_window[0])
+            for iter_ in range(*iter_window):
+                iter = iter_ + 1
+                iter_run_count[iter] += 1
+                cmaes = get_cmaes(iter)
+                target_state = self._data_loader.getSpecTimeState(iter * self._sample_timestep)
+                batch_action, noise = self.get_batch_action(target_state, cmaes)
+                prev_uids = self._traj.get_curr_uid_elite(iter - 1)
+                curr_uids = [self._unique_id.get(len(j) * self._num_substep) for j in self._jobs]
+                os.makedirs(osp.join(self._cfg.state_dir, f'{iter}'), exist_ok=True)
 
-            # receive data
-            for i, parentPipe in enumerate(self._parent_pipes):
-                results += parentPipe.recv()
+                # send to subprocess
+                for i, parentPipe in enumerate(self._parent_pipes):
+                    data = [iter, prev_uids[self._jobs[i]], curr_uids[i],
+                            target_state, batch_action[self._jobs_action[i]]]
+                    parentPipe.send(["sim", data])
+                results = []
 
-            # add into trajectory
-            for res in results:
-                self._traj.push(curr_iter, res)
+                # receive data
+                for i, parentPipe in enumerate(self._parent_pipes):
+                    results += parentPipe.recv()
 
-            # select elite samples
-            self._traj.select(curr_iter, 'greedy')
+                window_results.put(results)
+                cost = np.array([res[5] for res in results])
+                elite_index = cost.argpartition(self._nSave)[:self._nSave]
+                elite_noise = noise[elite_index]
 
-            t1 = time.time()
-            self._logger.info(
-                f'cfg: self._cfg.id | iter {t}/{self._nIter} | T_i {t1 - t0:.2f}s | ETA {get_eta_str(t, self._nIter, t1 - t0)}')
+                new_list = []
+                for i in range(1, len(iter_last_five_cost[iter])):
+                    new_list.append(iter_last_five_cost[iter][i])
+                    new_list.append(cost[elite_index[0]])
+                iter_last_five_cost[iter] = new_list
+
+                #  重建失败，本轮失败
+                # TODO: 倒地检测
+                if cost[elite_index[0]] > self.cost_fail_threshold:
+                    iter_window[1] = iter
+                    break
+
+                # 更新分布，最后一个(窗口末端)不用
+                if iter < iter_window[1] - 1:
+                    cmaes.update(elite_noise)
+
+                tq.update(1)
+
+            # iter_window[1] -= 1 ?
+            # 窗口移动
+            for iter_ in range(*iter_window):
+                iter = iter_ + 1
+                is_good_enough = False
+                last_five_cost = iter_last_five_cost[iter]
+                if last_five_cost[len(last_five_cost) - 1] < self.cost_good_threshold:
+                    is_good_enough = True
+                elif iter_run_count[iter] > 20:
+                    is_good_enough = True
+                elif iter_run_count[iter] > 5 and len(last_five_cost) >= 5 and np.std(last_five_cost) < 1e-4:
+                    is_good_enough = True
+                if not is_good_enough:
+                    break
+                iter_window[0] += 1
+                # add into trajectory
+                trajectory_counter += 1
+                for res in results.get():
+                    self._traj.push(iter, res)
+                # select elite samples
+                self._traj.select(iter, 'greedy')
 
         # end sampling and find the final trajectory
         self._traj.find_path_and_save(self._cfg)

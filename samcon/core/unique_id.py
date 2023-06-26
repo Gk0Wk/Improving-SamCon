@@ -1,8 +1,8 @@
-class UniqueId():
+class UniqueId:
 
     def __init__(self):
         self._id = 0
-    
+
     def get(self, num=1):
         ids = range(self._id, self._id + num)
         self._id += num

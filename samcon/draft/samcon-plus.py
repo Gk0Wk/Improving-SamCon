@@ -1,3 +1,5 @@
+from queue import Queue
+
 WINDOW_SIZE = 50
 
 def f(reference_motion: list[any], nSample: int, nElite: int):
@@ -9,19 +11,20 @@ def f(reference_motion: list[any], nSample: int, nElite: int):
         return cmaes_list[iter]
 
     target_trajectory = []
-    trial = 0 # 从 1 计数
+    trial = 0  # 从 1 计数
     iter_window = [0, 1]
     while len(target_trajectory) < len(reference_motion):
         trial += 1
         # 建立窗口
         iter_window[1] = min(len(reference_motion), iter_window[0] + WINDOW_SIZE)
+        results = Queue(WINDOW_SIZE)
         # 逐帧优化
         for iter in range(*iter_window):
             cmaes = get_cmaes(iter)
             samples = cmaes.sample(nSample)
             # TODO: 模拟、优选
             ...
-            target_trajectory.append(...)
+            results.put(...)
             # 重建失败，本轮失败
             if reconstruction_failed:
                 iter_window[1] = iter + 1
@@ -35,3 +38,4 @@ def f(reference_motion: list[any], nSample: int, nElite: int):
             if not is_good_engouth(iter):
                 break
             iter_window[0] += 1
+            target_trajectory.append(results.get())

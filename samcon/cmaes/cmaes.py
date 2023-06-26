@@ -1,11 +1,12 @@
 import numpy as np
 
 
-class CMAES():
+class CMAES:
     def __init__(self, dim: int,
                  sigma=0.3,  # 步长
                  d_sigma=1.09,  # simga 学习率(mu更新) 的迭代衰减参数
                  init_means: list[float] | None = None,
+                 init_cov: np.ndarray | None = None,
                  alpha_mu: float | list[float] | None = None,
                  alpha_sigma: float | None = None,
                  alpha_cp: float | None = None, alpha_c1: float | None = None,
@@ -19,8 +20,7 @@ class CMAES():
         self.sigma = sigma
 
         # 初始化均值(初始点) #
-        self.means = np.array(
-            init_means) if init_means is not None else np.random.rand(dim)
+        self.means = np.array(init_means) if init_means is not None else np.zeros(dim)
 
         # 自动选择数量 #
         self.sample_size = int(
@@ -55,12 +55,19 @@ class CMAES():
             1 + 2 * max(0, np.sqrt((self.mueff - 1) / (dim + 1)) - 1) + self.alpha_sigma))
 
         # 协方差矩阵初始化 #
-        self.C = np.identity(dim)
-        self.invsqrtC = np.identity(dim)  # I的逆开方还是I
+        if init_cov is None:
+            self.C = np.identity(dim)
+            self.invsqrtC = np.identity(dim)  # I的逆开方还是I
+        else:
+            self.C = init_cov
+            D, B = np.linalg.eigh(self.C, 'U')
+            D: np.ndarray = np.sqrt(D.real)
+            self.invsqrtC = B @ np.diag(1/D) @ B.T
 
         # 确定 invsqrtC 的更新频率, 每代都更新成本偏高 #
         self.invsqrtC_update_step = int(
             max(np.ceil(1 / ((self.alpha_c1 + self.alpha_clambda) * dim * 10)), 1))
+        print(f'Debug: self.invsqrtC_update_step={self.invsqrtC_update_step}')
 
         # E||N(0,I)||
         self.chiDim = np.sqrt(dim) * (1 - 1 / (4 * dim) + 1 / (21 * dim ** 2))

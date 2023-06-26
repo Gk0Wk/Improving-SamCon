@@ -1,18 +1,17 @@
+from utils.bullet_utils import isKeyTriggered
+from data_loaders.amass_motion_data import AmassMotionData
+from envs.humanoid_tracking_env import HumanoidTrackingEnv
+from samcon.utils.config import Config
+import matplotlib.pyplot as plt
+import argparse
+import numpy as np
+import joblib
+import os.path as osp
+import time
 import os
 import sys
 sys.path.append(os.getcwd())
 
-import time
-import os.path as osp
-import joblib
-import numpy as np
-import argparse
-import matplotlib.pyplot as plt
-
-from samcon.utils.config import Config
-from envs.humanoid_tracking_env import HumanoidTrackingEnv
-from data_loaders.amass_motion_data import AmassMotionData
-from utils.bullet_utils import isKeyTriggered
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -32,7 +31,7 @@ if __name__ == '__main__':
     nIter = i_data['total_cost'].shape[0]
     nSample = i_data['total_cost'].shape[1]
     nSave = i_data['elite_inds'].shape[1]
-    
+
     # save cost distribution pictures
     print(f'***** saving cost distribution pictures to {cfg.info_dir}')
     best_path_my_sys = i_data['best_path_my_sys']
@@ -62,7 +61,7 @@ if __name__ == '__main__':
         print(f'***** visualizing reconstructed motion of seq: {k}')
         print(f'***** vis_target_state: {vis_target_state} output debug info {debug}')
 
-        path = v['path_0'] # visualize path with min total cost
+        path = v['path_0']  # visualize path with min total cost
 
         # simulation to reproduce the trajectory
         t0_state = path['t0_state']
@@ -81,16 +80,16 @@ if __name__ == '__main__':
             costs.append(cost)
 
         # vis
-        # key Board Control: 
-        # [space] pause/continue 
+        # key Board Control:
+        # [space] pause/continue
         # [q] quit
         enable_animation = True
         n_iter = 0
-        while(env._pb_client.isConnected()):
+        while (env._pb_client.isConnected()):
             keys = env._pb_client.getKeyboardEvents()
-            if isKeyTriggered(keys, ' '): 
+            if isKeyTriggered(keys, ' '):
                 enable_animation = not enable_animation
-            if isKeyTriggered(keys, 'q'): 
+            if isKeyTriggered(keys, 'q'):
                 break
 
             if enable_animation:
@@ -113,5 +112,5 @@ if __name__ == '__main__':
                 n_iter += 1
                 if n_iter == seq_len:
                     n_iter = 0
-            
+
                 time.sleep(1/10)

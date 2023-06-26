@@ -4,6 +4,7 @@ import treelib
 import joblib
 import datetime
 
+
 class Trajectory:
     """
     1. store sample for each iter
@@ -14,7 +15,7 @@ class Trajectory:
     def __init__(self, nIter, nSample, nSave):
 
         self._tree = treelib.Tree()
-        self._tree.create_node(f'uid_0', 0) # root node
+        self._tree.create_node(f'uid_0', 0)  # root node
 
         self._nIter = nIter
         self._nSample = nSample
@@ -28,7 +29,7 @@ class Trajectory:
         self.cost = []
         self.info = []
 
-        self.elite_inds = [] # store indices that indicate which samples are elite
+        self.elite_inds = []  # store indices that indicate which samples are elite
 
         for _ in range(nIter + 1):
             self.prev_uid.append([])
@@ -108,7 +109,8 @@ class Trajectory:
     def select(self, i, mode='greedy'):
         assert len(self.get_cost(i)) == self._nSample
         if mode == 'greedy':
-            order = self.get_cost(i).argsort() # sort from small to large
+            # sort from small to large
+            order = self.get_cost(i).argpartition(self._nSave)
             self.elite_inds[i] = order[:self._nSave]
         elif mode == 'diversity':
             raise NotImplementedError
@@ -185,7 +187,7 @@ class Trajectory:
             'elite_inds': [],
         }
         for t in range(1, self._nIter + 1):
-            dummy = self.get_info(t) # (2000, 4)
+            dummy = self.get_info(t)  # (2000, 4)
             info['pose_cost'].append(dummy[:, 0])
             info['root_cost'].append(dummy[:, 1])
             info['ee_cost'].append(dummy[:, 2])

@@ -21,10 +21,8 @@ def simple_gussian_es(dim: int, fitness: Callable[[np.ndarray[Any, np.dtype[np.f
                       on_generation_finish: Callable | None = None
                       ) -> tuple[np.ndarray[Any, np.dtype[np.float64]],  np.ndarray[Any, np.dtype[np.float64]]]:
     # 自动初始化均值和方差
-    means = np.array(
-        init_means) if init_means is not None else np.random.rand(dim)
-    scale = np.array(
-        init_scales) if init_scales is not None else np.ones_like(means)
+    means = np.array(init_means) if init_means is not None else np.zeros(dim)
+    scale = np.array(init_scales) if init_scales is not None else np.ones_like(means)
 
     # 自动选择数量
     sample_size = int(sample_size if sample_size is not None else (
@@ -59,6 +57,7 @@ def simple_gussian_es(dim: int, fitness: Callable[[np.ndarray[Any, np.dtype[np.f
 # 写完才发现有人写过了: https://gist.github.com/yukoba/731bb555a7dc79cdfecf33904ee4e043 不过这个是列向量版本的
 def cma_es(dim: int, fitness: Callable[[np.ndarray[Any, np.dtype[np.float64]]], float],
            init_means: list[float] | None = None,
+           init_cov: np.ndarray | None = None,
            sigma=0.3,  # 步长
            d_sigma=1.09,  # simga 学习率(mu更新) 的迭代衰减参数
            # 几个学习率
@@ -70,8 +69,7 @@ def cma_es(dim: int, fitness: Callable[[np.ndarray[Any, np.dtype[np.float64]]], 
            on_generation_finish: Callable | None = None
            ) -> tuple[np.ndarray[Any, np.dtype[np.float64]],  np.ndarray[Any, np.dtype[np.float64]]]:
     # 初始化均值(初始点)
-    means = np.array(
-        init_means) if init_means is not None else np.random.rand(dim)
+    means = np.array(init_means) if init_means is not None else np.zeros(dim)
 
     # 自动选择数量
     sample_size = int(sample_size if sample_size is not None else (
@@ -104,9 +102,15 @@ def cma_es(dim: int, fitness: Callable[[np.ndarray[Any, np.dtype[np.float64]]], 
     d_sigma = float(d_sigma if d_sigma is not None else (
         1 + 2*max(0, np.sqrt((mueff-1)/(dim+1))-1)+alpha_sigma))
 
-    # 协方差矩阵初始化
-    C = np.identity(dim)
-    invsqrtC = np.identity(dim)  # I的逆开方还是I
+    # 协方差矩阵初始化 #
+    if init_cov is None:
+        C = np.identity(dim)
+        invsqrtC = np.identity(dim)  # I的逆开方还是I
+    else:
+        C = init_cov
+        D, B = np.linalg.eigh(C, 'U')
+        D: np.ndarray = np.sqrt(D.real)
+        invsqrtC = B @ np.diag(1/D) @ B.T
 
     # 确定 invsqrtC 的更新频率, 每代都更新成本偏高
     invsqrtC_update_step = int(

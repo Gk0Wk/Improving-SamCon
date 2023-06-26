@@ -9,10 +9,11 @@ from utils.bullet_utils import (
     computeAngVelRel
 )
 
+
 class AmassMotionData():
 
     def __init__(self, path, seq):
-        
+
         # load motion
         data = joblib.load(path)[seq]
 
@@ -35,7 +36,7 @@ class AmassMotionData():
         phases = curTime / cycleTime
         count = math.floor(phases)
         return count
-    
+
     def computeCycleOffset(self):
         """ compute base position (xyz) offset between first and last frame """
         frameData = self._motion[0]
@@ -44,10 +45,10 @@ class AmassMotionData():
         basePosEnd = frameDataNext[:3]
         cycleOffset = basePosEnd - basePosStart
         return cycleOffset
-    
+
     def getSpecTimeState(self, t):
         """ get humanoid state of specified time """
-        
+
         # transform t to frame, frameNext, frameFraction
         curTime = t
         keyFrameDuration = self.keyFrameDuration()
@@ -56,7 +57,7 @@ class AmassMotionData():
         frameTime = curTime - cycleCount * cycleTime
         if frameTime < 0:
             frameTime += cycleTime
-        
+
         frame = int(frameTime / keyFrameDuration)
         frameNext = frame + 1
         if frameNext >= self.numFrames():
@@ -79,19 +80,19 @@ class AmassMotionData():
     def interpolator(self, frameFraction, frameData, frameDataNext):
         keyFrameDuration = self.keyFrameDuration()
 
-        ##### Base Position
+        # Base Position
         basePos1Start = frameData[0:3]
         basePos1End = frameDataNext[0:3]
         basePos = basePos1Start + frameFraction * (basePos1End - basePos1Start)
         baseLinVel = computeLinVel(basePos1Start, basePos1End, keyFrameDuration)
 
-        ##### Base Orientation
+        # Base Orientation
         baseOrn1Start = frameData[3:7]
         baseOrn1Next = frameDataNext[3:7]
         baseOrn = p.getQuaternionSlerp(baseOrn1Start, baseOrn1Next, frameFraction)
         baseAngVel = computeAngVel(baseOrn1Start, baseOrn1Next, keyFrameDuration)
 
-        ##### Joints
+        # Joints
         jointsData = frameData[7:].reshape(-1, 4)
         jointsDataNext = frameDataNext[7:].reshape(-1, 4)
         jointsRot = []
@@ -105,5 +106,5 @@ class AmassMotionData():
         jointsVel = np.concatenate(jointsVel)
 
         state = np.concatenate((basePos, baseOrn, jointsRot, baseLinVel, baseAngVel, jointsVel))
-        
+
         return state

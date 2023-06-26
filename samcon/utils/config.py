@@ -5,6 +5,7 @@ import numpy as np
 
 from utils.tools import recreate_dirs
 
+
 class Config:
 
     def __init__(self, cfg_id, base_dir="", create_dirs=False, cfg_dict=None):
@@ -15,7 +16,7 @@ class Config:
         if cfg_dict is not None:
             cfg = cfg_dict
         else:
-            cfg_path =  osp.join(self.base_dir, "samcon", "cfg", f"{cfg_id}.yml")
+            cfg_path = osp.join(self.base_dir, "samcon", "cfg", f"{cfg_id}.yml")
             cfg = yaml.safe_load(open(cfg_path, 'rb'))
         self.cfg_dict = cfg
 
@@ -25,12 +26,12 @@ class Config:
         self.output_dir = '%s/results' % self.cfg_dir
         self.log_dir = '%s/log' % self.cfg_dir
         self.info_dir = '%s/info' % self.cfg_dir
-        self.state_dir =  '%s/states' % cfg['temp_dir']
+        self.state_dir = '%s/states' % cfg['temp_dir']
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.info_dir, exist_ok=True)
         if create_dirs:
             recreate_dirs(self.log_dir, self.state_dir)
-        
+
         # read parameters
         self.fps_sim = cfg['fps_sim']
         self.fps_act = cfg['fps_act']
@@ -66,5 +67,5 @@ class Config:
         self.end_effectors = cfg['end_effectors']
         self.cost_weights = cfg['cost_weights']
 
-    def get(self, key, default = None):
+    def get(self, key, default=None):
         return self.cfg_dict.get(key, default)

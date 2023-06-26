@@ -236,7 +236,7 @@ def rotation_matrix_to_angle_axis(rotation_matrix):
         >>> input = torch.rand(2, 3, 4)  # Nx4x4
         >>> output = tgm.rotation_matrix_to_angle_axis(input)  # Nx3
     """
-    if rotation_matrix.shape[1:] == (3,3):
+    if rotation_matrix.shape[1:] == (3, 3):
         rot_mat = rotation_matrix.reshape(-1, 3, 3)
         hom = torch.tensor([0, 0, 1], dtype=torch.float32,
                            device=rotation_matrix.device).reshape(1, 3, 1).expand(rot_mat.shape[0], -1, -1)
@@ -246,7 +246,6 @@ def rotation_matrix_to_angle_axis(rotation_matrix):
     aa = quaternion_to_angle_axis(quaternion)
     aa[torch.isnan(aa)] = 0.0
     return aa
-
 
 
 def rotation_matrix_to_quaternion(rotation_matrix, eps=1e-6):
@@ -538,7 +537,6 @@ class ConvertPointsToHomogeneous(nn.Module):
         return convert_points_to_homogeneous(input)
 
 
-
 def smpl_mat_to_aa(poses):
     poses_aa = []
     for pose_frame in poses:
@@ -552,35 +550,37 @@ def smpl_mat_to_aa(poses):
 
 
 def compute_rotation_matrix_from_ortho6d(ortho6d):
-    x_raw = ortho6d[:,0:3]#batch*3
-    y_raw = ortho6d[:,3:6]#batch*3
-        
-    x = normalize_vector(x_raw) #batch*3
-    z = cross_product(x,y_raw) #batch*3
-    z = normalize_vector(z)#batch*3
-    y = cross_product(z,x)#batch*3
-        
-    x = x.view(-1,3,1)
-    y = y.view(-1,3,1)
-    z = z.view(-1,3,1)
-    zeros = torch.zeros(z.shape, dtype = z.dtype).to(ortho6d.device)
-    matrix = torch.cat((x,y,z, zeros), 2) #batch*3*3
+    x_raw = ortho6d[:, 0:3]  # batch*3
+    y_raw = ortho6d[:, 3:6]  # batch*3
+
+    x = normalize_vector(x_raw)  # batch*3
+    z = cross_product(x, y_raw)  # batch*3
+    z = normalize_vector(z)  # batch*3
+    y = cross_product(z, x)  # batch*3
+
+    x = x.view(-1, 3, 1)
+    y = y.view(-1, 3, 1)
+    z = z.view(-1, 3, 1)
+    zeros = torch.zeros(z.shape, dtype=z.dtype).to(ortho6d.device)
+    matrix = torch.cat((x, y, z, zeros), 2)  # batch*3*3
     return matrix
 
+
 def compute_orth6d_from_rotation_matrix(rot_mats):
-    rot_mats = rot_mats[:,:,:2].transpose(1, 2).reshape(-1, 6)
+    rot_mats = rot_mats[:, :, :2].transpose(1, 2).reshape(-1, 6)
     return rot_mats
-    
-def cross_product( u, v):
+
+
+def cross_product(u, v):
     batch = u.shape[0]
-    #print (u.shape)
-    #print (v.shape)
-    i = u[:,1]*v[:,2] - u[:,2]*v[:,1]
-    j = u[:,2]*v[:,0] - u[:,0]*v[:,2]
-    k = u[:,0]*v[:,1] - u[:,1]*v[:,0]
-        
-    out = torch.cat((i.view(batch,1), j.view(batch,1), k.view(batch,1)),1)#batch*3
-        
+    # print (u.shape)
+    # print (v.shape)
+    i = u[:, 1]*v[:, 2] - u[:, 2]*v[:, 1]
+    j = u[:, 2]*v[:, 0] - u[:, 0]*v[:, 2]
+    k = u[:, 0]*v[:, 1] - u[:, 1]*v[:, 0]
+
+    out = torch.cat((i.view(batch, 1), j.view(batch, 1), k.view(batch, 1)), 1)  # batch*3
+
     return out
 
 
@@ -590,61 +590,65 @@ def convert_aa_to_orth6d(poses):
     else:
         curr_pose = torch.tensor(poses).to(poses.device).float().reshape(-1, 3)
     rot_mats = angle_axis_to_rotation_matrix(curr_pose)
-    rot_mats = rot_mats[:,:3,:]
+    rot_mats = rot_mats[:, :3, :]
     orth6d = compute_orth6d_from_rotation_matrix(rot_mats)
-    orth6d = orth6d.view(poses.shape[0], -1, 6) 
+    orth6d = orth6d.view(poses.shape[0], -1, 6)
     orth6d = orth6d
     return orth6d
+
 
 def convert_orth_6d_to_aa(orth6d):
     orth6d_flat = orth6d.reshape(-1, 6)
     rot_mat6d = compute_rotation_matrix_from_ortho6d(orth6d_flat)
     pose_aa = rotation_matrix_to_angle_axis(rot_mat6d)
-    
+
     shape_curr = list(orth6d.shape)
     shape_curr[-1] /= 2
     shape_curr = tuple([int(i) for i in shape_curr])
     pose_aa = pose_aa.reshape(shape_curr)
     return pose_aa
 
+
 def convert_orth_6d_to_mat(orth6d):
     num_joints = int(orth6d.shape[1]/6)
     orth6d_flat = orth6d.view(-1, 6)
-    rot_mat6d = compute_rotation_matrix_from_ortho6d(orth6d_flat)[:,:,:3]
-    rot_mat = rot_mat6d.reshape(orth6d.shape[0], num_joints, 3, 3) 
+    rot_mat6d = compute_rotation_matrix_from_ortho6d(orth6d_flat)[:, :, :3]
+    rot_mat = rot_mat6d.reshape(orth6d.shape[0], num_joints, 3, 3)
     return rot_mat
 
 
-def normalize_vector( v, return_mag =False):
-    batch=v.shape[0]
-    v_mag = torch.sqrt(v.pow(2).sum(1))# batch
-    v_mag = torch.max(v_mag, torch.autograd.Variable(torch.tensor([1e-8], dtype = v_mag.dtype).to(v.device)))
-    v_mag = v_mag.view(batch,1).expand(batch,v.shape[1])
+def normalize_vector(v, return_mag=False):
+    batch = v.shape[0]
+    v_mag = torch.sqrt(v.pow(2).sum(1))  # batch
+    v_mag = torch.max(v_mag, torch.autograd.Variable(torch.tensor([1e-8], dtype=v_mag.dtype).to(v.device)))
+    v_mag = v_mag.view(batch, 1).expand(batch, v.shape[1])
     v = v/v_mag
-    if(return_mag==True):
-        return v, v_mag[:,0]
+    if (return_mag == True):
+        return v, v_mag[:, 0]
     else:
         return v
 
 
-def vertizalize_smpl_root(poses, root_vec = [np.pi, 0,0]):
+def vertizalize_smpl_root(poses, root_vec=[np.pi, 0, 0]):
     device = poses.device
-    
-    target_mat = angle_axis_to_rotation_matrix(torch.tensor([root_vec], dtype = poses.dtype).to(device))[:,:3,:3].to(device)
-    org_mats =  angle_axis_to_rotation_matrix(poses[:, :3])[:,:3,:3].to(device)
+
+    target_mat = angle_axis_to_rotation_matrix(torch.tensor(
+        [root_vec], dtype=poses.dtype).to(device))[:, :3, :3].to(device)
+    org_mats = angle_axis_to_rotation_matrix(poses[:, :3])[:, :3, :3].to(device)
     org_mat_inv = torch.inverse(org_mats[0]).to(device)
     apply_mat = torch.matmul(target_mat, org_mat_inv)
     res_root_mat = torch.matmul(apply_mat, org_mats)
     zeros = torch.zeros((res_root_mat.shape[0], res_root_mat.shape[1], 1), dtype=res_root_mat.dtype).to(device)
-    res_root_mats_4 = torch.cat((res_root_mat, zeros), 2) #batch*3*4
+    res_root_mats_4 = torch.cat((res_root_mat, zeros), 2)  # batch*3*4
     res_root_aa = rotation_matrix_to_angle_axis(res_root_mats_4)
 
     poses[:, :3] = res_root_aa
     # print(res_root_aa)
     return poses
 
+
 def rot6d_to_rotmat(x):
-    x = x.view(-1,3,2)
+    x = x.view(-1, 3, 2)
 
     # Normalize the first vector
     b1 = F.normalize(x[:, :, 0], dim=1, eps=1e-6)
